@@ -46,12 +46,16 @@ class llg2_solver:
         self.wp = TestFunction(self.FS_1d)
         
         self.pot = fem.Function(self.FS_1d)
+        
+        # can be chahged by setting later
+        self.h_ext = None
     
     def norm_vec(self, u):
         v = u.copy()
         N = u.x.array.size//3
         v_vec = np.reshape(v.x.array, (N, 3))
         for i in range(0, N, 1):
+            #v_vec[i,0] = 0
             norm = np.sqrt(v_vec[i,0]**2 + v_vec[i,1]**2 + v_vec[i,2]**2)
             v_vec[i] = v_vec[i]/norm
         
@@ -65,9 +69,9 @@ class llg2_solver:
             loc.set(0)
         
         assemble_vector(self.b_p, self.L_p)
-        apply_lifting(self.b_p, [self.a_p], [self.bc_p])
+        #apply_lifting(self.b_p, [self.a_p], [self.bc_p])
         self.b_p.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-        set_bc(self.b_p, self.bc_p)
+        #set_bc(self.b_p, self.bc_p)
         self.solver_p.solve(self.b_p, self.pot.vector)
         self.pot.x.scatter_forward()
         
@@ -97,10 +101,11 @@ class llg2_solver:
         self.ub = fem.Function(self.FS)
         self.ub.interpolate(m_in_expr)
         
-        self.m = fem.Function(self.FS)
+        self.m = fem.Function(self.FS, name = 'm')
         self.m.interpolate(m_in_expr)
         
-        self.m_init = fem.Function(self.FS)
+        self.m_init = fem.Function(self.FS, name = 'm_init')
+        self.m_init.name = 'm_init'
         self.m_init.interpolate(m_in_expr)
         
         self.tdim = mesh_2d.topology.dim
@@ -109,9 +114,17 @@ class llg2_solver:
         self.boundary_facets = mesh.exterior_facet_indices(mesh_2d.topology)
 
         self.boundary_dofs = fem.locate_dofs_topological(self.FS, self.fdim, self.boundary_facets)
+        
+        def boundary_D(x):
+            return np.logical_or(np.isclose(x[1], -self.Ly/2), np.isclose(x[1], self.Ly/2))
+
+
+        self.dofs_D = fem.locate_dofs_geometrical(self.FS_1d, boundary_D)
+        
         self.bc = fem.dirichletbc(self.ub, self.boundary_dofs)
         
-        self.bc_p = [fem.dirichletbc(PETSc.ScalarType(0), fem.locate_dofs_topological(self.FS_1d, self.fdim, self.boundary_facets), self.FS_1d)]
+        
+        self.bc_p = [fem.dirichletbc(PETSc.ScalarType(0), self.dofs_D, self.FS_1d)]
         
         self.T = 1.
     
@@ -125,11 +138,16 @@ class llg2_solver:
                      -self.p*(2*e1*m1.dx(1) + 2*e2*m2.dx(1) + 2*e3*m3.dx(1) + m1*e1.dx(1) + m2*e2.dx(1) + m3*e3.dx(1) + m1*e2.dx(0) + m2*e2.dx(1) + m3*dedz_2), \
                           -self.p*(m1*e3.dx(0) + m2*e3.dx(1) + m3*dedz_3 + m1*dedz_1 + m2*dedz_2 + m3*dedz_3)))
         
-        self.demag_vec = as_vector((-0.5*self.pot.dx(0), -0.5*self.pot.dx(1), oo))
+        self.demag_vec = as_vector((-self.pot.dx(0), -self.pot.dx(1), oo))
         self.demag_vec_func = fem.Function(self.FS)
         demag_vec_func_expr = fem.Expression(self.demag_vec, self.FS.element.interpolation_points())
         self.demag_vec_func.interpolate(demag_vec_func_expr)
-        return  as_vector((oo, oo, m3)) + vec + self.demag_vec
+        
+        vec_total = as_vector((oo, oo, m3)) + vec
+        
+        if self.h_ext is not None:
+            vec_total += self.h_ext
+        return  vec_total + self.Ms**2/self.kku/2*self.demag_vec
     
     def dot_v(self, m, mm, w):
         mm1, mm2, mm3 = m.split()
@@ -153,6 +171,30 @@ class llg2_solver:
         self.N_f = N_f
     
         self.route_0 = route_0
+        
+    def set_h_ext(self, h_x = 0.5, h_y = 0, h_z = 0):
+        """
+        Set external magnetic field
+
+        Parameters
+        ----------
+        h_x : TYPE, optional
+            DESCRIPTION. The default is 0.
+        h_y : TYPE, optional
+            DESCRIPTION. The default is 0.
+        h_z : TYPE, optional
+            DESCRIPTION. The default is 0.
+
+        Returns
+        -------
+        None.
+
+        """
+        
+        factor = self.Ms**2/2/self.kku
+        #self.h_ext = factor*fen.project(fen.as_vector((h_x, h_y, h_z)), self.FS)
+        
+        self.h_ext = factor*as_vector((h_x, h_y, h_z))
     
     def set_F(self):
         
@@ -230,11 +272,11 @@ class llg2_solver:
         dE3_dz = (r0/d)**2*(1/r**3+(-3)*(-ksi_0)*(-ksi_0)/r**5)
         
         e_v_expr = fem.Expression(as_vector((E1,E2,E3)), self.FS.element.interpolation_points())
-        self.e_v = fem.Function(self.FS)
+        self.e_v = fem.Function(self.FS, name = 'e')
         self.e_v.interpolate(e_v_expr)
         
         de_dz_v_expr = fem.Expression(as_vector((dE1_dz,dE2_dz,dE3_dz)), self.FS.element.interpolation_points())
-        self.de_dz_v = fem.Function(self.FS)
+        self.de_dz_v = fem.Function(self.FS, name = 'de_dz')
         self.de_dz_v.interpolate(de_dz_v_expr)
         
         print("ME parameter p = ", self.p)
@@ -308,6 +350,11 @@ class llg2_solver:
         #opts[f"{option_prefix}pc_factor_mat_solver_type"] = "mumps"
         ksp.setFromOptions()
         
+        m_init_file = XDMFFile(mesh_2d.comm, self.route_0 + "m_init.xdmf", "w")
+        m_init_file.write_mesh(self.mesh_2d)
+        m_init_file.write_function(self.m_init, self.T)
+        m_init_file.close()
+        
         m_file = XDMFFile(mesh_2d.comm, self.route_0 + "m.xdmf", "w")
         m_file.write_mesh(self.mesh_2d)
         #m_file.write_function(self.m, self.T)
@@ -332,8 +379,8 @@ class llg2_solver:
         de_dz_file.write_function(self.de_dz_v, self.T)
         de_dz_file.close()
         
-        derivative_func = fem.Function(self.FS)
-        Pol_func = fem.Function(self.FS)
+        derivative_func = fem.Function(self.FS, name = 'derivative')
+        Pol_func = fem.Function(self.FS, name = 'Pol')
         
         oo = fem.Constant(mesh_2d, PETSc.ScalarType(0))
 
@@ -360,12 +407,6 @@ class llg2_solver:
             #v = norm_vec(v)
             self.m.x.array[:] = self.v.x.array
             
-            # self.pot.x.array[:] = self.demag_pot().x.array[:]
-            # self.demag_vec = as_vector((-0.5*self.pot.dx(0), -0.5*self.pot.dx(1), oo))
-            # self.demag_vec_func = fem.Function(self.FS)
-            # demag_vec_func_expr = fem.Expression(self.demag_vec, self.FS.element.interpolation_points())
-            # self.demag_vec_func.interpolate(demag_vec_func_expr)
-            
             
             v1, v2, v3 = self.v.split()
             
@@ -381,7 +422,7 @@ class llg2_solver:
             # Pol3_avg = comm.allreduce(fem.assemble_vector(Pol3_int), MPI.SUM)/(self.Lx*self.Ly)
             
             if (n%each_idx_write == 0):
-                m_file.write_function(self.v, self.T)
+                m_file.write_function(self.m, self.T)
                 deriv_file.write_function(derivative_func, self.T)
                 Pol_file.write_function(Pol_func, self.T)
                 demag_field_file.write_function(self.demag_vec_func, self.T)
@@ -395,10 +436,10 @@ class llg2_solver:
         demag_field_file.close()
 
 
-Lx = 20
-Ly = 20
+Lx = 50
+Ly = 30
 mesh_2d = mesh.create_rectangle(MPI.COMM_WORLD, [np.array([-Lx/2, -Ly/2]), np.array([Lx/2, Ly/2])],
-                               [5*Lx, 5*Ly], mesh.CellType.triangle)
+                               [7*Lx, 7*Ly], mesh.CellType.triangle)
 
 llg_solver = llg2_solver(Lx, Ly, mesh_2d)
 
@@ -408,14 +449,15 @@ ub_expr = fem.Expression(as_vector((sin(2*atan(exp(x[1]))), 0, cos(2*atan(exp(x[
 llg_solver.set_in_cond(ub_expr, in_type='new', path_to_sol = None)
 
 llg_solver.set_params(alpha = 1E-4, kku = 1000, A_ex = 9.5*10**(-8), Ms = 4, pin = True)
+#llg_solver.set_h_ext(h_x = 50)
 
 dt = 2*0.0001
-N_f = 100
+N_f = 3000
 
 llg_solver.set_comp_params(dt, N_f, route_0 = '/media/mnv/T7/sw_new/test/graphs/')
 
-llg_solver.e_field_from_ps(x0 = 0, y0 = 2, r0 = 0.00002, U0 = -5*2*10/3/50, gamma_me = 1E-6)
+llg_solver.e_field_from_ps(x0 = 0, y0 = 2, r0 = 0.00001, U0 = 2.5*2*10/3/50, gamma_me = 1E-6)
 
 llg_solver.set_F()
 
-llg_solver.solve(each_idx_write = 1)
+llg_solver.solve(each_idx_write = 5)
