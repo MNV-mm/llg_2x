@@ -17,8 +17,8 @@ from ufl import (FiniteElement, VectorElement, sin, cos, atan, exp, sqrt, Spatia
                  as_vector, dx, grad, inner, dot, div, cross,
                  TrialFunction, TestFunction, derivative, Coefficient, replace, FacetNormal, Measure)
 from petsc4py import PETSc
-import matplotlib.pyplot as plt
-import pyvista
+#import matplotlib.pyplot as plt
+#import pyvista
 import numpy as np
 
 class llg2_solver:
@@ -436,10 +436,10 @@ class llg2_solver:
         demag_field_file.close()
 
 
-Lx = 50
-Ly = 30
+Lx = 10
+Ly = 10
 mesh_2d = mesh.create_rectangle(MPI.COMM_WORLD, [np.array([-Lx/2, -Ly/2]), np.array([Lx/2, Ly/2])],
-                               [7*Lx, 7*Ly], mesh.CellType.triangle)
+                               [16*Lx, 16*Ly], mesh.CellType.triangle)
 
 llg_solver = llg2_solver(Lx, Ly, mesh_2d)
 
@@ -452,11 +452,11 @@ llg_solver.set_params(alpha = 1E-4, kku = 1000, A_ex = 9.5*10**(-8), Ms = 4, pin
 #llg_solver.set_h_ext(h_x = 50)
 
 dt = 2*0.0001
-N_f = 3000
+N_f = 4000
 
-llg_solver.set_comp_params(dt, N_f, route_0 = '/media/mnv/T7/sw_new/test/graphs/')
+llg_solver.set_comp_params(dt, N_f, route_0 = '/home/mnv/llg_nl/results/graphs/')
 
-llg_solver.e_field_from_ps(x0 = 0, y0 = 2, r0 = 0.00001, U0 = 2.5*2*10/3/50, gamma_me = 1E-6)
+llg_solver.e_field_from_ps(x0 = 0, y0 = 0.2, r0 = 0.000001, U0 = 2.5*2*10/3/50/10, gamma_me = 1E-6)
 
 llg_solver.set_F()
 
