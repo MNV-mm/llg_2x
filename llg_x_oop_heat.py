@@ -164,13 +164,14 @@ class llg2_solver:
         return  vec_total + self.Ms**2/self.kku/2*self.demag_vec
     
     def dot_v(self, m, mm, w):
+        # Exchange is OFF !!!
         mm1, mm2, mm3 = m.split()
         e1, e2, e3 = self.e_v.split()
         oo = fem.Constant(mesh_2d, PETSc.ScalarType(0))
         m_2d = as_vector(mm1,mm2)
-        expr = dot(grad(cross(w,m)[0]),grad(mm1)  + 2*self.p*e1*m_2d) + \
-            dot(grad(cross(w,m)[1]),grad(mm2)  + 2*self.p*e2*m_2d) + \
-                dot(grad(cross(w,m)[2]),grad(mm3)  + 2*self.p*e3*m_2d)
+        expr = dot(grad(cross(w,m)[0]), 2*self.p*e1*m_2d) + \ # grad(mm1)  + 
+            dot(grad(cross(w,m)[1]), 2*self.p*e2*m_2d) + \ # grad(mm2)  + 
+                dot(grad(cross(w,m)[2]), 2*self.p*e3*m_2d) # grad(mm3)  + 
         return expr
     
     def set_params(self, alpha = 1, kku = 1000, A_ex = 9.5*10**(-8), Ms = 4, aniso_func = False, delta_Ms = 0, delta_Ku = 0, sigma = 1):
