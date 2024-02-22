@@ -151,9 +151,12 @@ class llg2_solver:
     
     def dot_v(self, m, mm, w):
         mm1, mm2, mm3 = m.split()
-        expr = dot(grad(cross(w,m)[0]),grad(mm1)) + \
-            dot(grad(cross(w,m)[1]),grad(mm2)) + \
-                dot(grad(cross(w,m)[2]),grad(mm3))
+        e1, e2, e3 = self.e_v.split()
+        oo = fem.Constant(mesh_2d, PETSc.ScalarType(0))
+        m_2d = as_vector(mm1,mm2)
+        expr = dot(grad(cross(w,m)[0]),grad(mm1)  + 2*self.p*e1*m_2d) + \
+            dot(grad(cross(w,m)[1]),grad(mm2)  + 2*self.p*e2*m_2d) + \
+                dot(grad(cross(w,m)[2]),grad(mm3)  + 2*self.p*e3*m_2d)
         return expr
     
     def set_params(self, alpha = 1, kku = 1000, A_ex = 9.5*10**(-8), Ms = 4, pin = True):
